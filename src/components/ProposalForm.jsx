@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { generateContent } from '../services/ai'
 import { TONES, PROPOSAL_TYPES, MAX_JOB_DESC, COOLDOWN_MS } from '../config/constants'
 
-export default function ProposalForm({ onGenerated, onResult, setLoading, loading }) {
+export default function ProposalForm({ onGenerated, setLoading, loading }) {
   const [form, setForm] = useState({
     type: 'Upwork Proposal',
     tone: 'professional',
@@ -58,7 +58,6 @@ export default function ProposalForm({ onGenerated, onResult, setLoading, loadin
     try {
       const text = await generateContent(form, controller.signal)
       if (typeof onGenerated === 'function') onGenerated(text, form)
-      if (typeof onResult === 'function') onResult(text, form)
     } catch (err) {
       if (err.name === 'AbortError') {
         setError('Request cancelled.')
