@@ -1,8 +1,10 @@
-export function sanitize(str, max = 5000) {
-  if (typeof str !== 'string') return '';
-  return str
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters
-    .replace(/[<>]/g, '') // Remove basic HTML tags
+export function sanitize(input, maxLength = 5000) {
+  if (typeof input !== 'string') return ''
+
+  return input
+    .replace(/[<>]/g, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/"""/g, '"')
     .trim()
-    .slice(0, max);
+    .slice(0, maxLength)
 }

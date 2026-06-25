@@ -1,33 +1,35 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react'
 
-export function useCopy(timeout = 2000) {
-  const [copied, setCopied] = useState(false);
+export function useCopy(duration = 2000) {
+  const [copied, setCopied] = useState(false)
 
-  const copy = useCallback((text) => {
-    if (!text) return;
-    
-    // Fallback for non-HTTPS or older browsers
-    if (!navigator.clipboard) {
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      document.body.appendChild(textArea);
-      textArea.select();
+  const copy = useCallback(async (text) => {
+    if (!text) return false
+
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), duration)
+      return true
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
       try {
-        document.execCommand('copy');
-        setCopied(true);
-        setTimeout(() => setCopied(false), timeout);
-      } catch (err) {
-        console.error('Fallback copy failed', err);
+        document.execCommand('copy')
+        setCopied(true)
+        setTimeout(() => setCopied(false), duration)
+        return true
+      } catch {
+        return false
+      } finally {
+        document.body.removeChild(textarea)
       }
-      document.body.removeChild(textArea);
-      return;
     }
+  }, [duration])
 
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), timeout);
-    });
-  }, [timeout]);
-
-  return { copied, copy };
+  return { copied, copy }
 }

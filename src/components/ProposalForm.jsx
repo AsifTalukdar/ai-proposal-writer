@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { generateContent } from '../services/ai'
-import { TONES, PROPOSAL_TYPES, COOLDOWN_MS } from '../config/constants'
+import { TONES, PROPOSAL_TYPES, MAX_JOB_DESC, COOLDOWN_MS } from '../config/constants'
 
-export default function ProposalForm({ onResult, loading, setLoading }) {
+export default function ProposalForm({ onGenerated, setLoading, loading }) {
   const [form, setForm] = useState({
     type: 'Upwork Proposal',
     tone: 'professional',
@@ -11,45 +11,58 @@ export default function ProposalForm({ onResult, loading, setLoading }) {
     skills: '',
     jobDescription: ''
   })
+
   const [error, setError] = useState('')
-  const [cooldown, setCooldown] = useState(0)
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [now, setNow] = useState(Date.now())
   const abortRef = useRef(null)
 
-  const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(id)
+  }, [])
 
-  const submit = async (e) => {
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
+  const inCooldown = cooldownUntil > now
+
+  const handleChange = (e) => {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
     if (!form.jobDescription.trim()) {
-      setError('Paste a job description first.')
+      setError('Please paste a job description first.')
       return
     }
-    if (cooldown > 0) {
-      setError(`Wait ${cooldown}s before next generation.`)
+    if (form.jobDescription.length > MAX_JOB_DESC) {
+      setError(`Keep job description under ${MAX_JOB_DESC} characters.`)
+      return
+    }
+    if (inCooldown) {
+      setError(`Please wait ${remaining}s before generating again.`)
       return
     }
 
-    if (abortRef.current) abortRef.current.abort()
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
 
+    setCooldownUntil(Date.now() + COOLDOWN_MS)
     setLoading(true)
-    setCooldown(Math.ceil(COOLDOWN_MS / 1000))
-
-    const iv = setInterval(() => {
-      setCooldown(p => {
-        if (p <= 1) { clearInterval(iv); return 0 }
-        return p - 1
-      })
-    }, 1000)
 
     try {
-      const text = await generateContent(form, ctrl.signal)
-      onResult(text, form)
+      const text = await generateContent(form, controller.signal)
+      onGenerated(text, form)
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        setError(err.message || 'Generation failed.')
+      if (err.name === 'AbortError') {
+        setError('Request cancelled.')
+      } else {
+        setError(err.message || 'Something went wrong.')
       }
     } finally {
       setLoading(false)
@@ -57,135 +70,135 @@ export default function ProposalForm({ onResult, loading, setLoading }) {
     }
   }
 
+  const handleCancel = () => abortRef.current?.abort()
+
   return (
-    <form onSubmit={submit} className="glass p-6 md:p-8 animate-slide-up">
+    <section className="glass p-6 md:p-8 animate-fade-in">
       <div className="mb-6">
-        <h2 className="text-xl font-bold">Create Proposal or Email</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Paste a job description → get a polished, personalized proposal in seconds.
+        <h2 className="text-xl font-bold text-white mb-1">Create New Proposal</h2>
+        <p className="text-slate-400 text-sm">
+          Paste a job description and generate a polished proposal or outreach message.
         </p>
       </div>
 
-      <div className="space-y-5">
-        {/* Row 1: Type + Tone */}
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Type</label>
-            <select
-              value={form.type}
-              onChange={e => set('type', e.target.value)}
-              className="input-field"
-            >
+            <select name="type" value={form.type} onChange={handleChange} className="input">
               {PROPOSAL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Tone</label>
             <div className="grid grid-cols-3 gap-2">
-              {TONES.map(t => (
+              {TONES.map(tone => (
                 <button
-                  key={t.value}
+                  key={tone.value}
                   type="button"
-                  onClick={() => set('tone', t.value)}
-                  className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all ${
-                    form.tone === t.value
-                      ? 'bg-blue-600/20 border-blue-500 text-blue-300 shadow-lg shadow-blue-500/10'
+                  onClick={() => setForm(prev => ({ ...prev, tone: tone.value }))}
+                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+                    form.tone === tone.value
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-300'
                       : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
                   }`}
                 >
-                  {t.emoji} {t.label}
+                  {tone.emoji} {tone.label}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Row 2: Name, Client, Skills */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Your Name</label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Your Name</label>
             <input
+              name="name"
               value={form.name}
-              onChange={e => set('name', e.target.value)}
-              placeholder="Rahman"
-              className="input-field"
+              onChange={handleChange}
+              placeholder="e.g. Rahman"
+              className="input"
+              maxLength={100}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Client Name</label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Client Name</label>
             <input
+              name="clientName"
               value={form.clientName}
-              onChange={e => set('clientName', e.target.value)}
-              placeholder="John"
-              className="input-field"
+              onChange={handleChange}
+              placeholder="e.g. John"
+              className="input"
+              maxLength={100}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Skills</label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Skills</label>
             <input
+              name="skills"
               value={form.skills}
-              onChange={e => set('skills', e.target.value)}
+              onChange={handleChange}
               placeholder="React, SEO, HR..."
-              className="input-field"
+              className="input"
+              maxLength={300}
             />
           </div>
         </div>
 
-        {/* Row 3: Job Description */}
         <div>
-          <div className="flex justify-between mb-1.5">
-            <label className="text-sm font-medium text-slate-300">Job Description</label>
-            <span className="text-xs text-slate-500">{form.jobDescription.length} / 5000</span>
-          </div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Job Description
+            <span className={`font-normal ml-2 ${form.jobDescription.length > MAX_JOB_DESC ? 'text-red-400' : 'text-slate-500'}`}>
+              ({form.jobDescription.length}/{MAX_JOB_DESC})
+            </span>
+          </label>
           <textarea
+            name="jobDescription"
             value={form.jobDescription}
-            onChange={e => set('jobDescription', e.target.value)}
+            onChange={handleChange}
             rows={7}
-            placeholder="Paste the full job description from Upwork, Fiverr, or any platform..."
-            className="input-field resize-none"
+            placeholder="Paste the client's job description here..."
+            className="input resize-none"
             required
           />
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm flex items-start gap-2">
-            <span className="mt-0.5">⚠️</span>
-            <span>{error}</span>
+          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-sm">
+            {error}
           </div>
         )}
 
-        {/* Submit */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-          <p className="text-xs text-slate-500">
-            🔒 Your data stays in your browser. API calls are server-secured.
-          </p>
-          <button
-            type="submit"
-            disabled={loading || cooldown > 0 || !form.jobDescription.trim()}
-            className="btn-primary w-full sm:w-auto min-w-[200px] flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Writing...
-              </>
-            ) : cooldown > 0 ? (
-              `Wait ${cooldown}s`
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Generate
-              </>
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between pt-2">
+          <div className="text-xs text-slate-500">
+            Secure server-side OpenRouter integration via Vercel
+          </div>
+          <div className="flex gap-3">
+            {loading && (
+              <button type="button" onClick={handleCancel} className="btn-ghost">
+                Cancel
+              </button>
             )}
-          </button>
+            <button
+              type="submit"
+              disabled={loading || inCooldown || !form.jobDescription.trim()}
+              className="btn flex items-center justify-center gap-2 min-w-[180px]"
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Writing...
+                </>
+              ) : inCooldown ? `Wait ${remaining}s` : 'Generate'}
+            </button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
+    </section>
   )
 }

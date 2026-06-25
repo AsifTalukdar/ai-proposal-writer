@@ -1,11 +1,15 @@
 const CONFIG = {
   UPSTREAM_URL: 'https://openrouter.ai/api/v1/chat/completions',
+  OPENAI_URL: 'https://api.openai.com/v1/chat/completions',
   TIMEOUT_MS: 25000,
   MAX_BODY_SIZE: 1024 * 50,
   MAX_MESSAGES: 5,
   MAX_CONTENT_LENGTH: 6000,
   MAX_TOKENS_LIMIT: 2000,
   ALLOWED_MODELS: [
+    'gpt-4o-mini',
+    'gpt-4o',
+    'gpt-3.5-turbo',
     'mistralai/mistral-7b-instruct:free',
     'anthropic/claude-3.5-sonnet',
     'openai/gpt-4o-mini',
@@ -110,8 +114,13 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: `Rate limited. Retry in ${rl.retryAfter}s.` })
   }
 
-  const key = process.env.OPENROUTER_API_KEY
-  if (!key) return res.status(500).json({ error: 'Server misconfigured.' })
+  // Resolve API key supporting both direct OpenAI and OpenRouter
+  const key = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || ''
+  if (!key) {
+    return res.status(500).json({
+      error: 'Server misconfigured: Missing OPENAI_API_KEY or OPENROUTER_API_KEY in your .env.local file.'
+    })
+  }
 
   const errors = validate(req.body)
   if (errors.length) return res.status(400).json({ error: 'Validation failed.', details: errors })
@@ -121,10 +130,22 @@ export default async function handler(req, res) {
     content: clean(m.content, CONFIG.MAX_CONTENT_LENGTH)
   }))
 
+  // Determine if using OpenAI direct URL vs OpenRouter
+  const isOpenAI = Boolean(process.env.OPENAI_API_KEY) || key.startsWith('sk-proj-') || (key.startsWith('sk-') && !key.startsWith('sk-or-v1-'))
+  const targetUrl = isOpenAI ? CONFIG.OPENAI_URL : CONFIG.UPSTREAM_URL
+
+  let targetModel = req.body.model
+  if (isOpenAI && targetModel.startsWith('openai/')) {
+    targetModel = targetModel.replace('openai/', '')
+  }
+  if (isOpenAI && targetModel.includes('mistral')) {
+    targetModel = 'gpt-4o-mini' // fallback to OpenAI default if mistral was passed
+  }
+
   const payload = {
-    model: req.body.model,
+    model: targetModel,
     messages,
-    temperature: req.body.temperature ?? 0.7,
+    temperature: req.body.temperature ?? 0.75,
     max_tokens: Math.min(Number(req.body.max_tokens) || 900, CONFIG.MAX_TOKENS_LIMIT)
   }
 
@@ -132,25 +153,26 @@ export default async function handler(req, res) {
   const timer = setTimeout(() => ctrl.abort(), CONFIG.TIMEOUT_MS)
 
   try {
-    const up = await fetch(CONFIG.UPSTREAM_URL, {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    }
+    if (!isOpenAI) {
+      headers['HTTP-Referer'] = process.env.APP_URL || 'https://proposalai.vercel.app'
+      headers['X-Title'] = CONFIG.APP_TITLE
+    }
+
+    const up = await fetch(targetUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${key}`,
-        'HTTP-Referer': process.env.APP_URL || 'https://proposalai.vercel.app',
-        'X-Title': CONFIG.APP_TITLE
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: ctrl.signal
     })
 
     const data = await up.json().catch(() => null)
     if (!up.ok) {
-      const map = {
-        401: 'Auth failed.', 402: 'Quota exceeded.',
-        429: 'AI busy, retry soon.', 503: 'AI unavailable.'
-      }
-      return res.status(up.status).json({ error: map[up.status] || 'AI request failed.' })
+      const errMsg = data?.error?.message || data?.error || 'AI request failed.'
+      return res.status(up.status).json({ error: typeof errMsg === 'string' ? errMsg : 'AI request failed.' })
     }
 
     const content = data?.choices?.[0]?.message?.content
