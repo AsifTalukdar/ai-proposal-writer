@@ -1,6 +1,51 @@
 import { useCallback, useMemo } from 'react'
 import { useCopy } from '../hooks/useCopy'
 
+// Helper to convert Markdown (**bold**, *italic*, __underline__, ### headings, - lists) into Rich HTML
+function renderRichTextHtml(rawText) {
+  if (!rawText) return ''
+
+  let html = rawText
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  html = html.replace(/^###\s+(.*)$/gm, '<strong class="block text-lg font-bold text-blue-300 mt-4 mb-1">$1</strong>')
+  html = html.replace(/^##\s+(.*)$/gm, '<strong class="block text-xl font-extrabold text-blue-200 mt-5 mb-2">$1</strong>')
+  html = html.replace(/^#\s+(.*)$/gm, '<strong class="block text-2xl font-black text-white mt-6 mb-2">$1</strong>')
+
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
+  html = html.replace(/__([^_]+)__/g, '<u class="underline underline-offset-4 font-semibold text-blue-200">$1</u>')
+
+  html = html.replace(/\*([^*]+)\*/g, '<em class="italic text-slate-200">$1</em>')
+  html = html.replace(/_([^_]+)_/g, '<em class="italic text-slate-200">$1</em>')
+
+  html = html.replace(/^[-*]\s+(.*)$/gm, '<div class="flex items-start gap-2.5 my-1 pl-2"><span class="text-blue-400 font-bold mt-0.5">•</span><span class="flex-1">$1</span></div>')
+  html = html.replace(/^(\d+)\.\s+(.*)$/gm, '<div class="flex items-start gap-2.5 my-1 pl-2"><span class="text-blue-400 font-bold mt-0.5">$1.</span><span class="flex-1">$2</span></div>')
+
+  html = html.replace(/\n\n+/g, '<div class="h-4"></div>')
+  html = html.replace(/\n/g, '<br/>')
+
+  return html
+}
+
+// Helper for Word (.doc) and PDF rich export
+function exportRichDocHtml(rawText) {
+  if (!rawText) return ''
+  let html = rawText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  html = html.replace(/^###\s+(.*)$/gm, '<h3 style="color:#1e40af; font-size:14pt; margin-top:16px; margin-bottom:6px;">$1</h3>')
+  html = html.replace(/^##\s+(.*)$/gm, '<h2 style="color:#1e3a8a; font-size:16pt; margin-top:20px; margin-bottom:8px;">$1</h2>')
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+  html = html.replace(/__([^_]+)__/g, '<u>$1</u>')
+  html = html.replace(/\*([^*]+)\*/g, '<i>$1</i>')
+  html = html.replace(/_([^_]+)_/g, '<i>$1</i>')
+  html = html.replace(/^[-*]\s+(.*)$/gm, '<li style="margin-left:20px; margin-bottom:4px;">$1</li>')
+  html = html.replace(/^(\d+)\.\s+(.*)$/gm, '<li style="margin-left:20px; margin-bottom:4px; list-style-type:decimal;">$2</li>')
+  html = html.replace(/\n\n+/g, '<p style="margin-bottom:12px;"></p>')
+  html = html.replace(/\n/g, '<br/>')
+  return html
+}
+
 export default function OutputBox({ text, meta, loading }) {
   const { copied, copy } = useCopy()
 
@@ -10,14 +55,17 @@ export default function OutputBox({ text, meta, loading }) {
     return { words, chars: text.length }
   }, [text])
 
+  const richHtmlContent = useMemo(() => renderRichTextHtml(text), [text])
+
   const handleDownloadDoc = useCallback(() => {
     if (!text) return
     const title = meta?.type ? meta.type.replace(/\s+/g, '_') : 'Proposal'
+    const docFormattedBody = exportRichDocHtml(text)
+
     const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-    <head><meta charset='utf-8'><title>${title}</title></head><body style="font-family: Arial, sans-serif; font-size: 12pt; line-height: 1.6; color: #111111;">`
+    <head><meta charset='utf-8'><title>${title}</title></head><body style="font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #111111; padding: 20px;">`
     const footer = "</body></html>"
-    const formattedBody = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')
-    const content = header + formattedBody + footer
+    const content = header + docFormattedBody + footer
 
     const blob = new Blob(['\ufeff', content], { type: 'application/msword' })
     const url = URL.createObjectURL(blob)
@@ -33,6 +81,7 @@ export default function OutputBox({ text, meta, loading }) {
   const handleDownloadPdf = useCallback(() => {
     if (!text) return
     const title = meta?.type || 'Proposal'
+    const pdfFormattedBody = exportRichDocHtml(text)
     const printWindow = window.open('', '_blank')
     if (!printWindow) return
 
@@ -42,9 +91,14 @@ export default function OutputBox({ text, meta, loading }) {
         <head>
           <title>${title}</title>
           <style>
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.7; padding: 50px; color: #1e293b; max-width: 800px; margin: 0 auto; }
-            h1 { font-size: 18px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 24px; }
-            pre { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; }
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.7; padding: 50px; color: #1e293b; max-width: 800px; margin: 0 auto; }
+            h1 { font-size: 22px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 28px; }
+            h2, h3 { color: #1e3a8a; margin-top: 24px; margin-bottom: 8px; }
+            b { font-weight: 700; color: #0f172a; }
+            i { font-style: italic; }
+            u { text-decoration: underline; }
+            li { margin-bottom: 6px; }
+            p { margin-bottom: 16px; }
             @media print {
               body { padding: 20px; }
             }
@@ -52,7 +106,7 @@ export default function OutputBox({ text, meta, loading }) {
         </head>
         <body>
           <h1>${title} (${meta?.tone || 'Professional'})</h1>
-          <pre>${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+          <div>${pdfFormattedBody}</div>
           <script>
             window.onload = function() {
               window.print();
@@ -136,7 +190,7 @@ export default function OutputBox({ text, meta, loading }) {
         )}
       </div>
 
-      {/* Content */}
+      {/* Content rendered as stunning Rich Text */}
       <div className="flex-1 min-h-[260px] relative">
         {loading ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-slate-900/40 rounded-xl backdrop-blur-sm">
@@ -144,9 +198,10 @@ export default function OutputBox({ text, meta, loading }) {
             <p className="animate-pulse text-sm font-semibold text-slate-300">Crafting your winning proposal...</p>
           </div>
         ) : (
-          <div className="whitespace-pre-wrap text-slate-100 leading-relaxed text-[15px] font-normal selection:bg-blue-500/40 p-2">
-            {text}
-          </div>
+          <div
+            className="text-slate-100 leading-relaxed text-[15px] font-normal selection:bg-blue-500/40 p-2 space-y-1"
+            dangerouslySetInnerHTML={{ __html: richHtmlContent }}
+          />
         )}
       </div>
 
@@ -167,7 +222,7 @@ export default function OutputBox({ text, meta, loading }) {
             </button>
             <span className="text-slate-700">•</span>
             <button onClick={() => copy(text)} className="font-semibold text-blue-400 hover:text-blue-300 transition-colors">
-              {copied ? '✓ Copied to clipboard' : 'Copy'}
+              {copied ? '✓ Copied to clipboard' : 'Copy Text'}
             </button>
           </div>
         </div>
