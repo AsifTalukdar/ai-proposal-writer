@@ -10,18 +10,17 @@ const CONFIG = {
     'gpt-4o-mini',
     'gpt-4o',
     'gpt-3.5-turbo',
-    'meta-llama/llama-3-8b-instruct:free',
-    'microsoft/phi-3-mini-128k-instruct:free',
-    'google/gemma-2-9b-it:free',
-    'qwen/qwen-2-7b-instruct:free',
-    'google/gemini-2.0-flash-lite-preview-02-05:free',
-    'mistralai/mistral-7b-instruct:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'google/gemma-4-31b-it:free',
+    'meta-llama/llama-3.2-3b-instruct:free',
+    'openai/gpt-oss-20b:free',
+    'nousresearch/hermes-3-llama-3.1-405b:free',
     'anthropic/claude-3.5-sonnet',
     'openai/gpt-4o-mini'
   ],
   ALLOWED_ROLES: ['system', 'user', 'assistant'],
   RATE_LIMIT_WINDOW_MS: 60000,
-  RATE_LIMIT_MAX: 20,
+  RATE_LIMIT_MAX: 15,
   APP_TITLE: 'ProposalAI'
 }
 
@@ -118,7 +117,6 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: `Rate limited. Retry in ${rl.retryAfter}s.` })
   }
 
-  // Check OpenRouter key first, then OpenAI key
   const openRouterKey = process.env.OPENROUTER_API_KEY?.trim() || ''
   const openAiKey = process.env.OPENAI_API_KEY?.trim() || ''
 
@@ -144,13 +142,13 @@ export default async function handler(req, res) {
 
   let targetModel = req.body.model
 
-  // If using OpenRouter and frontend passed paid gpt/claude/mistral, auto-switch to stable free Llama model
-  if (useOpenRouter && (targetModel.includes('gpt') || targetModel.includes('claude') || targetModel.includes('gemini'))) {
-    targetModel = 'meta-llama/llama-3-8b-instruct:free'
+  // If using OpenRouter and frontend passed paid/deprecated models, auto-switch to active free Llama 3.3 70B!
+  if (useOpenRouter && (targetModel.includes('gpt') || targetModel.includes('claude') || targetModel.includes('mistral') || targetModel.includes('qwen') || targetModel.includes('gemini'))) {
+    targetModel = 'meta-llama/llama-3.3-70b-instruct:free'
   }
 
-  // If using OpenAI direct and frontend passed mistral/free model, auto-switch to gpt-4o-mini
-  if (isOpenAI && (targetModel.includes('mistral') || targetModel.includes(':free') || targetModel.includes('llama'))) {
+  // If using OpenAI direct and frontend passed free model, auto-switch to gpt-4o-mini
+  if (isOpenAI && targetModel.includes(':free')) {
     targetModel = 'gpt-4o-mini'
   }
 
@@ -183,17 +181,17 @@ export default async function handler(req, res) {
 
     let data = await up.json().catch(() => null)
 
-    // UNIVERSAL SELF-HEALING FALLBACK: If OpenRouter rejects ANY model (invalid ID, deprecated, 404, 400), instantly loop bulletproof free models!
-    if (!up.ok && useOpenRouter) {
-      const bulletproofFreeModels = [
-        'meta-llama/llama-3-8b-instruct:free',
-        'microsoft/phi-3-mini-128k-instruct:free',
-        'google/gemma-2-9b-it:free',
-        'qwen/qwen-2-7b-instruct:free'
+    // SELF-HEALING FALLBACK: If OpenRouter deprecated a model or says "No endpoints found", auto-retry active verified free models!
+    if (!up.ok && useOpenRouter && (data?.error?.message?.includes('No endpoints found') || up.status === 404)) {
+      const fallbackFreeModels = [
+        'meta-llama/llama-3.3-70b-instruct:free',
+        'google/gemma-4-31b-it:free',
+        'meta-llama/llama-3.2-3b-instruct:free',
+        'openai/gpt-oss-20b:free'
       ]
-      for (const fbModel of bulletproofFreeModels) {
+      for (const fbModel of fallbackFreeModels) {
         if (fbModel === payload.model) continue
-        console.log(`OpenRouter model error (${up.status}). Retrying with bulletproof free model: ${fbModel}`)
+        console.log(`Retrying OpenRouter with verified live free model: ${fbModel}`)
         payload.model = fbModel
         up = await fetch(targetUrl, {
           method: 'POST',

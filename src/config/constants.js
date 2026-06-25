@@ -12,7 +12,7 @@ export const PROPOSAL_TYPES = [
   'LinkedIn Outreach'
 ]
 
-export const MODEL = 'meta-llama/llama-3-8b-instruct:free'
+export const MODEL = 'meta-llama/llama-3.3-70b-instruct:free'
 export const MAX_HISTORY = 50
 export const MAX_JOB_DESC = 5000
 export const COOLDOWN_MS = 4000
