@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { generateContent } from '../services/ai'
 import { TONES, PROPOSAL_TYPES, COOLDOWN_MS } from '../config/constants'
 
