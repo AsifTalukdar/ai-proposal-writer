@@ -12,7 +12,7 @@ export const PROPOSAL_TYPES = [
   'LinkedIn Outreach'
 ]
 
-export const MODEL = 'mistralai/mistral-7b-instruct:free'
+export const MODEL = 'google/gemini-2.0-flash-lite-preview-02-05:free'
 export const MAX_HISTORY = 50
 export const MAX_JOB_DESC = 5000
 export const COOLDOWN_MS = 4000
