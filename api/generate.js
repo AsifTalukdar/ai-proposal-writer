@@ -142,7 +142,7 @@ export default async function handler(req, res) {
 
   let targetModel = req.body.model
 
-  // If using OpenRouter and frontend passed paid/deprecated models, auto-switch to active free Llama 3.3 70B!
+  // If using OpenRouter and frontend passed old/legacy models, default to active Llama 3.3 70B!
   if (useOpenRouter && (targetModel.includes('gpt') || targetModel.includes('claude') || targetModel.includes('mistral') || targetModel.includes('qwen') || targetModel.includes('gemini'))) {
     targetModel = 'meta-llama/llama-3.3-70b-instruct:free'
   }
@@ -181,8 +181,8 @@ export default async function handler(req, res) {
 
     let data = await up.json().catch(() => null)
 
-    // SELF-HEALING FALLBACK: If OpenRouter deprecated a model or says "No endpoints found", auto-retry active verified free models!
-    if (!up.ok && useOpenRouter && (data?.error?.message?.includes('No endpoints found') || up.status === 404)) {
+    // UNIVERSAL AUTO-SWITCH: If the first AI model fails for ANY reason whatsoever, automatically switch to backup free models!
+    if (!up.ok && useOpenRouter) {
       const fallbackFreeModels = [
         'meta-llama/llama-3.3-70b-instruct:free',
         'google/gemma-4-31b-it:free',
@@ -191,7 +191,7 @@ export default async function handler(req, res) {
       ]
       for (const fbModel of fallbackFreeModels) {
         if (fbModel === payload.model) continue
-        console.log(`Retrying OpenRouter with verified live free model: ${fbModel}`)
+        console.log(`AI Auto-Switch: Switching from ${payload.model} to ${fbModel}`)
         payload.model = fbModel
         up = await fetch(targetUrl, {
           method: 'POST',
