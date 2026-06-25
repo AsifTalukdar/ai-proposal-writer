@@ -10,16 +10,18 @@ const CONFIG = {
     'gpt-4o-mini',
     'gpt-4o',
     'gpt-3.5-turbo',
-    'google/gemini-2.0-flash-lite-preview-02-05:free',
     'meta-llama/llama-3-8b-instruct:free',
-    'mistralai/mistral-7b-instruct:free',
+    'microsoft/phi-3-mini-128k-instruct:free',
+    'google/gemma-2-9b-it:free',
     'qwen/qwen-2-7b-instruct:free',
+    'google/gemini-2.0-flash-lite-preview-02-05:free',
+    'mistralai/mistral-7b-instruct:free',
     'anthropic/claude-3.5-sonnet',
     'openai/gpt-4o-mini'
   ],
   ALLOWED_ROLES: ['system', 'user', 'assistant'],
   RATE_LIMIT_WINDOW_MS: 60000,
-  RATE_LIMIT_MAX: 15,
+  RATE_LIMIT_MAX: 20,
   APP_TITLE: 'ProposalAI'
 }
 
@@ -142,13 +144,13 @@ export default async function handler(req, res) {
 
   let targetModel = req.body.model
 
-  // If using OpenRouter and frontend passed paid gpt/claude/mistral, auto-switch to reliable free Gemini model
-  if (useOpenRouter && (targetModel.includes('gpt') || targetModel.includes('claude') || targetModel.includes('mistral'))) {
-    targetModel = 'google/gemini-2.0-flash-lite-preview-02-05:free'
+  // If using OpenRouter and frontend passed paid gpt/claude/mistral, auto-switch to stable free Llama model
+  if (useOpenRouter && (targetModel.includes('gpt') || targetModel.includes('claude') || targetModel.includes('gemini'))) {
+    targetModel = 'meta-llama/llama-3-8b-instruct:free'
   }
 
   // If using OpenAI direct and frontend passed mistral/free model, auto-switch to gpt-4o-mini
-  if (isOpenAI && (targetModel.includes('mistral') || targetModel.includes(':free'))) {
+  if (isOpenAI && (targetModel.includes('mistral') || targetModel.includes(':free') || targetModel.includes('llama'))) {
     targetModel = 'gpt-4o-mini'
   }
 
@@ -181,16 +183,17 @@ export default async function handler(req, res) {
 
     let data = await up.json().catch(() => null)
 
-    // SELF-HEALING FALLBACK: If OpenRouter deprecated a model or says "No endpoints found", auto-retry active free models!
-    if (!up.ok && useOpenRouter && (data?.error?.message?.includes('No endpoints found') || up.status === 404)) {
-      const fallbackFreeModels = [
-        'google/gemini-2.0-flash-lite-preview-02-05:free',
+    // UNIVERSAL SELF-HEALING FALLBACK: If OpenRouter rejects ANY model (invalid ID, deprecated, 404, 400), instantly loop bulletproof free models!
+    if (!up.ok && useOpenRouter) {
+      const bulletproofFreeModels = [
         'meta-llama/llama-3-8b-instruct:free',
+        'microsoft/phi-3-mini-128k-instruct:free',
+        'google/gemma-2-9b-it:free',
         'qwen/qwen-2-7b-instruct:free'
       ]
-      for (const fbModel of fallbackFreeModels) {
+      for (const fbModel of bulletproofFreeModels) {
         if (fbModel === payload.model) continue
-        console.log(`Retrying OpenRouter with fallback active free model: ${fbModel}`)
+        console.log(`OpenRouter model error (${up.status}). Retrying with bulletproof free model: ${fbModel}`)
         payload.model = fbModel
         up = await fetch(targetUrl, {
           method: 'POST',
