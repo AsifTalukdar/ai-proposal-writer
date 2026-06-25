@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { generateContent } from '../services/ai'
 import { TONES, PROPOSAL_TYPES, MAX_JOB_DESC, COOLDOWN_MS } from '../config/constants'
 
-export default function ProposalForm({ onGenerated, setLoading, loading }) {
+export default function ProposalForm({ onGenerated, onResult, setLoading, loading }) {
   const [form, setForm] = useState({
     type: 'Upwork Proposal',
     tone: 'professional',
@@ -58,6 +58,7 @@ export default function ProposalForm({ onGenerated, setLoading, loading }) {
     try {
       const text = await generateContent(form, controller.signal)
       if (typeof onGenerated === 'function') onGenerated(text, form)
+      if (typeof onResult === 'function') onResult(text, form)
     } catch (err) {
       if (err.name === 'AbortError') {
         setError('Request cancelled.')
@@ -98,11 +99,10 @@ export default function ProposalForm({ onGenerated, setLoading, loading }) {
                   key={tone.value}
                   type="button"
                   onClick={() => setForm(prev => ({ ...prev, tone: tone.value }))}
-                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-                    form.tone === tone.value
+                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${form.tone === tone.value
                       ? 'bg-blue-600/20 border-blue-500 text-blue-300'
                       : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
-                  }`}
+                    }`}
                 >
                   {tone.emoji} {tone.label}
                 </button>
