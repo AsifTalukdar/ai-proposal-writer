@@ -98,11 +98,10 @@ export default function ProposalForm({ onGenerated, setLoading, loading }) {
                   key={tone.value}
                   type="button"
                   onClick={() => setForm(prev => ({ ...prev, tone: tone.value }))}
-                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-                    form.tone === tone.value
+                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${form.tone === tone.value
                       ? 'bg-blue-600/20 border-blue-500 text-blue-300'
                       : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600'
-                  }`}
+                    }`}
                 >
                   {tone.emoji} {tone.label}
                 </button>

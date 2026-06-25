@@ -11,9 +11,10 @@ const CONFIG = {
     'gpt-4o',
     'gpt-3.5-turbo',
     'mistralai/mistral-7b-instruct:free',
+    'google/gemini-2.0-flash-lite-preview-02-05:free',
+    'meta-llama/llama-3-8b-instruct:free',
     'anthropic/claude-3.5-sonnet',
-    'openai/gpt-4o-mini',
-    'google/gemini-pro-1.5'
+    'openai/gpt-4o-mini'
   ],
   ALLOWED_ROLES: ['system', 'user', 'assistant'],
   RATE_LIMIT_WINDOW_MS: 60000,
@@ -72,7 +73,7 @@ function validate(body) {
   const e = []
   if (!body || typeof body !== 'object') return ['Invalid body.']
   if (!body.model || !CONFIG.ALLOWED_MODELS.includes(body.model))
-    e.push(`Model not allowed. Use: ${CONFIG.ALLOWED_MODELS[0]}`)
+    e.push(`Model not allowed. Use: ${CONFIG.ALLOWED_MODELS[3]}`)
   if (!Array.isArray(body.messages) || body.messages.length === 0)
     e.push('Messages required.')
   if (Array.isArray(body.messages) && body.messages.length > CONFIG.MAX_MESSAGES)
@@ -114,11 +115,16 @@ export default async function handler(req, res) {
     return res.status(429).json({ error: `Rate limited. Retry in ${rl.retryAfter}s.` })
   }
 
-  // Resolve API key supporting both direct OpenAI and OpenRouter
-  const key = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || ''
+  // Check OpenRouter key first, then OpenAI key
+  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim() || ''
+  const openAiKey = process.env.OPENAI_API_KEY?.trim() || ''
+
+  const useOpenRouter = Boolean(openRouterKey) && openRouterKey.startsWith('sk-or-')
+  const key = useOpenRouter ? openRouterKey : openAiKey
+
   if (!key) {
     return res.status(500).json({
-      error: 'Server misconfigured: Missing OPENAI_API_KEY or OPENROUTER_API_KEY in your .env.local file.'
+      error: 'Server misconfigured: Missing OPENROUTER_API_KEY or OPENAI_API_KEY in your .env.local file.'
     })
   }
 
@@ -130,16 +136,19 @@ export default async function handler(req, res) {
     content: clean(m.content, CONFIG.MAX_CONTENT_LENGTH)
   }))
 
-  // Determine if using OpenAI direct URL vs OpenRouter
-  const isOpenAI = Boolean(process.env.OPENAI_API_KEY) || key.startsWith('sk-proj-') || (key.startsWith('sk-') && !key.startsWith('sk-or-v1-'))
+  const isOpenAI = !useOpenRouter
   const targetUrl = isOpenAI ? CONFIG.OPENAI_URL : CONFIG.UPSTREAM_URL
 
   let targetModel = req.body.model
-  if (isOpenAI && targetModel.startsWith('openai/')) {
-    targetModel = targetModel.replace('openai/', '')
+
+  // If using OpenRouter and frontend passed paid gpt-4o-mini, auto-switch to 100% free mistral model!
+  if (useOpenRouter && (targetModel.includes('gpt') || targetModel.includes('claude'))) {
+    targetModel = 'mistralai/mistral-7b-instruct:free'
   }
-  if (isOpenAI && targetModel.includes('mistral')) {
-    targetModel = 'gpt-4o-mini' // fallback to OpenAI default if mistral was passed
+
+  // If using OpenAI direct and frontend passed mistral/free model, auto-switch to gpt-4o-mini
+  if (isOpenAI && (targetModel.includes('mistral') || targetModel.includes(':free'))) {
+    targetModel = 'gpt-4o-mini'
   }
 
   const payload = {
@@ -157,7 +166,7 @@ export default async function handler(req, res) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${key}`
     }
-    if (!isOpenAI) {
+    if (useOpenRouter) {
       headers['HTTP-Referer'] = process.env.APP_URL || 'https://proposalai.vercel.app'
       headers['X-Title'] = CONFIG.APP_TITLE
     }

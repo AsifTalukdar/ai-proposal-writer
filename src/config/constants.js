@@ -12,7 +12,7 @@ export const PROPOSAL_TYPES = [
   'LinkedIn Outreach'
 ]
 
-export const MODEL = 'gpt-4o-mini'
+export const MODEL = 'mistralai/mistral-7b-instruct:free'
 export const MAX_HISTORY = 50
 export const MAX_JOB_DESC = 5000
 export const COOLDOWN_MS = 4000
